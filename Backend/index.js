@@ -16,10 +16,22 @@ const limiter = rateLimit({
     message: "Too many requests, please try again after a minute"
 });
 
-app.use(cors());
+// Configure CORS with options to allow all origins
+const corsOptions = {
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    optionsSuccessStatus: 204,
+};
+
+// Apply CORS middleware with the options
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use(limiter);
+
+// Handle OPTIONS preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 app.use('/api/ai', aiRoutes);
 
