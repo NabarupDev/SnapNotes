@@ -222,15 +222,32 @@ const Summarize = () => {
         setSummary(cleanSummary);
       })
       .catch((err) => {
-        if (err.status === 403) {
-          setError("Request cannot be processed at this time. Please try a different topic.");
+        if (err.status === 400) {
+          setError("Missing required fields. Please ensure topic, format, and length are provided.");
+        } else if (err.status === 403) {
+          // Extract more details from the 403 error response
+          const rewriteSuggestion = err.message?.rewriteSuggestion;
+          const detectedPatterns = err.message?.detectedPatterns;
+          
+          let errorMessage = "Request contains potentially sensitive content that cannot be processed.";
+          if (rewriteSuggestion) {
+            errorMessage += "\n\n" + rewriteSuggestion;
+          }
+          
+          setError(errorMessage);
           setIsSensitiveContentError(true);
+          
+          // If there are detected patterns, we could do something with them here
+          if (detectedPatterns && Array.isArray(detectedPatterns) && detectedPatterns.length > 0) {
+            console.info("Content filtered due to detected patterns", { detectedPatterns });
+          }
         } else if (err.status === 429) {
           setError("Service is currently busy. Please try again after a moment.");
+        } else if (err.status === 500) {
+          setError("AI Summarization failed. Please try again later.");
         } else {
           setError("Unable to generate summary at this time. Please try again later.");
         }
-        // No console.error here - errors are silenced
       })
       .finally(() => {
         setTimeout(() => {

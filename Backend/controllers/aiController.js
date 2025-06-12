@@ -3,6 +3,7 @@ const axios = require("axios");
 
 //const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_URL = process.env.GEMINI_API_URL;
 
 /**
  * Checks if content may contain sensitive or inappropriate material
@@ -219,6 +220,25 @@ const generateRewriteSuggestion = (detectedPatterns) => {
     return suggestion;
 };
 
+// Add these utility functions for retry logic
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const retryOperation = async (operation, retries = 3, delay = 1000) => {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            console.log(`Attempt ${i+1} failed. Retrying in ${delay/1000} seconds...`);
+            await sleep(delay);
+            // Exponential backoff
+            delay = delay * 2;
+        }
+    }
+    throw lastError; // All retries failed
+};
+
 const summarizeWithAI = async (req, res) => {
     try {
         const { text, format, length } = req.body;
@@ -241,98 +261,106 @@ const summarizeWithAI = async (req, res) => {
         }
         
         //console.log("⚠️ Switching to Gemini AI...");
-        const geminiResponse = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                contents: [
-                    {
-                        role: "user",
-                        parts: [
-                            {
-                                "text": `Imagine you are an **expert tutor** helping a student understand and solve a problem. Your task is to create the **most effective, structured, and easy-to-follow explanation** for this topic or problem.  
-                              
-                              📌 **Topic/Problem:** ${text}  
-                              📌 **Format:** ${format}  
-                              📌 **Length:** ${length} words  
-                              
-                              🔹 **Your Goal:**  
-                              - Provide a **highly structured, crystal-clear, and concise explanation**  
-                              - Use **formulas, diagrams, real-life analogies, and step-by-step breakdowns**  
-                              - Make the content **easily understandable and memorable**  
-                              
-                              ---
-                              
-                              ## 📝 **Structure:**  
-                              
-                              ### 1️⃣ **Problem Definition:**  
-                              ➡️ Provide a **clear explanation** of the problem or topic.  
-                              
-                              ### 2️⃣ **Core Concepts:**  
-                              📌 Break down the **fundamental principles** behind this topic.
-                              📌 For math/science problems: identify the key formulas and concepts needed.
-                              
-                              ### 3️⃣ **Step-by-Step Solution:**  
-                              🧠 Provide a **methodical approach** to understanding or solving the problem.
-                              ✅ For math: Show each calculation step clearly.
-                              ✅ For physics/chemistry: Explain the reasoning behind each step.
-                              ✅ For theoretical topics: Present logical progression of ideas.
-                              
-                              ### 4️⃣ **Common Questions & Mistakes:**  
-                              📖 Address potential confusion points:  
-                              
-                              **Question 1:** [Anticipate a common question]  
-                              **Answer:** [Provide a clear explanation]  
-                              
-                              **Question 2:** [Another common question]  
-                              **Answer:** [Clear explanation]  
+        
+        // Use retry logic for the API call
+        const geminiResponse = await retryOperation(async () => {
+            console.log("📡 Sending request to Gemini API...");
+            return await axios.post(
+                `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+                {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                {
+                                    "text": `Imagine you are an **expert tutor** helping a student understand and solve a problem. Your task is to create the **most effective, structured, and easy-to-follow explanation** for this topic or problem.  
+                                  
+                                  📌 **Topic/Problem:** ${text}  
+                                  📌 **Format:** ${format}  
+                                  📌 **Length:** ${length} words  
+                                  
+                                  🔹 **Your Goal:**  
+                                  - Provide a **highly structured, crystal-clear, and concise explanation**  
+                                  - Use **formulas, diagrams, real-life analogies, and step-by-step breakdowns**  
+                                  - Make the content **easily understandable and memorable**  
+                                  
+                                  ---
+                                  
+                                  ## 📝 **Structure:**  
+                                  
+                                  ### 1️⃣ **Problem Definition:**  
+                                  ➡️ Provide a **clear explanation** of the problem or topic.  
+                                  
+                                  ### 2️⃣ **Core Concepts:**  
+                                  📌 Break down the **fundamental principles** behind this topic.
+                                  📌 For math/science problems: identify the key formulas and concepts needed.
+                                  
+                                  ### 3️⃣ **Step-by-Step Solution:**  
+                                  🧠 Provide a **methodical approach** to understanding or solving the problem.
+                                  ✅ For math: Show each calculation step clearly.
+                                  ✅ For physics/chemistry: Explain the reasoning behind each step.
+                                  ✅ For theoretical topics: Present logical progression of ideas.
+                                  
+                                  ### 4️⃣ **Common Questions & Mistakes:**  
+                                  📖 Address potential confusion points:  
+                                  
+                                  **Question 1:** [Anticipate a common question]  
+                                  **Answer:** [Provide a clear explanation]  
+                                  
+                                  **Question 2:** [Another common question]  
+                                  **Answer:** [Clear explanation]  
 
-                              **Common Mistake:** [Identify a typical error students make]  
-                              **Correction:** [How to avoid or fix it]  
-                              
-                              ### 5️⃣ **Key Formulas & Visual Aids:**  
-                              📊 Include **essential formulas, equations, or conceptual diagrams** as needed.
-                              
-                              ### 6️⃣ **Real-World Application:**  
-                              🌍 Briefly explain how this concept applies in practical scenarios.
-                              
-                              ---
-                              
-                              ## ⚡ **Important Guidelines:**  
-                              ✅ Use **clear, simple language** avoiding unnecessary jargon  
-                              ✅ Employ **visual organization** with bullet points and structured formatting  
-                              ✅ For math/science: ensure all variables are clearly defined  
-                              ✅ Include **memory aids or shortcuts** where appropriate  
-                              
-                              📌 **Your output should help the student fully grasp the concept and know exactly how to approach similar problems!** 🎯  
-                              `
-                            }
-                        ]
-                    }
-                ],
-                // Add safety settings to the API request
-                safetySettings: [
-                    {
-                        category: "HARM_CATEGORY_HARASSMENT",
-                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                                  **Common Mistake:** [Identify a typical error students make]  
+                                  **Correction:** [How to avoid or fix it]  
+                                  
+                                  ### 5️⃣ **Key Formulas & Visual Aids:**  
+                                  📊 Include **essential formulas, equations, or conceptual diagrams** as needed.
+                                  
+                                  ### 6️⃣ **Real-World Application:**  
+                                  🌍 Briefly explain how this concept applies in practical scenarios.
+                                  
+                                  ---
+                                  
+                                  ## ⚡ **Important Guidelines:**  
+                                  ✅ Use **clear, simple language** avoiding unnecessary jargon  
+                                  ✅ Employ **visual organization** with bullet points and structured formatting  
+                                  ✅ For math/science: ensure all variables are clearly defined  
+                                  ✅ Include **memory aids or shortcuts** where appropriate  
+                                  
+                                  📌 **Your output should help the student fully grasp the concept and know exactly how to approach similar problems!** 🎯  
+                                  `
+                                }
+                            ]
+                        }
+                    ],
+                    // Add safety settings to the API request
+                    safetySettings: [
+                        {
+                            category: "HARM_CATEGORY_HARASSMENT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_HATE_SPEECH",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        }
+                    ]
+                },
+                {
+                    headers: { 
+                        "Content-Type": "application/json"
                     },
-                    {
-                        category: "HARM_CATEGORY_HATE_SPEECH",
-                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                    },
-                    {
-                        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                    },
-                    {
-                        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                    }
-                ]
-            },
-            {
-                headers: { "Content-Type": "application/json" }
-            }
-        );
+                    timeout: 30000 // Add a reasonable timeout value (30 seconds)
+                }
+            );
+        }, 3, 2000); // Retry up to 3 times with 2s initial delay
 
         // Check if response contains any content
         if (!geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -356,16 +384,48 @@ const summarizeWithAI = async (req, res) => {
     } catch (error) {
         console.error("❌ AI Summarization Error:", error.message);
         
-        // Check if error is related to safety/moderation
-        if (error.response && error.response.data && 
-            (error.response.data.error?.includes("safety") || 
-             error.response.data.error?.includes("content policy"))) {
-            return res.status(403).json({ 
-                error: "AI request was blocked due to content policy violation."
+        // Improved error handling with more detailed messages
+        if (error.response) {
+            // The server responded with a status code outside the 2xx range
+            const statusCode = error.response.status;
+            let errorMessage = "AI service encountered an error.";
+            
+            switch (statusCode) {
+                case 400:
+                    errorMessage = "Bad request to AI service. Check your input parameters.";
+                    break;
+                case 401:
+                    errorMessage = "Authentication failed. Check your API key.";
+                    break;
+                case 403:
+                    errorMessage = "Access forbidden. Verify API key permissions.";
+                    break;
+                case 429:
+                    errorMessage = "Rate limit exceeded. Try again later.";
+                    break;
+                case 500:
+                    errorMessage = "AI service internal error. Try again later.";
+                    break;
+                case 503:
+                    errorMessage = "AI service is temporarily unavailable. Try again later.";
+                    break;
+            }
+            
+            return res.status(statusCode).json({ 
+                error: errorMessage,
+                details: error.response.data
+            });
+        } else if (error.request) {
+            // Request made but no response received
+            return res.status(504).json({ 
+                error: "AI service did not respond. Check your network connection or try again later."
+            });
+        } else {
+            // Something happened in setting up the request
+            return res.status(500).json({ 
+                error: "Failed to connect to AI service: " + error.message
             });
         }
-        
-        return res.status(500).json({ error: "AI Summarization failed. Try again later." });
     }
 };
 
